@@ -25,31 +25,44 @@ def find_faces(image, args):
     return centers
 
 
-def detect_eyes(image, argument_parser):
+def find_eyes(image, args):
     eyes_cascade = cv2.CascadeClassifier()
 
-    if not eyes_cascade.load(cv2.samples.findFile(argument_parser.eyes_cascade)):
+    if not eyes_cascade.load(cv2.samples.findFile(args.eyes_cascade)):
         raise ValueError('--(!)Error loading eyes cascade')
 
-    return detectAndDisplay(image, eyes_cascade)
+    # -- Detect eyes
+    eyes = eyes_cascade.detectMultiScale(image, scaleFactor=1.05, minNeighbors=10, minSize=[30, 30])
 
-def facial_detection_preprocessing(image):
-    # image = cv2.equalizeHist(image)
-    # Create a CLAHE object (with optional parameters)
-    # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    #
-    # # Apply CLAHE
-    # hist_gray = clahe.apply(image)
-    # hist_gray = custom_equalize(image)
+    centers = []
+    for (x, y, w, h) in eyes:
+        center = [x + w // 2, y + h // 2, w, h]
+        centers.append(center)
+        # image = cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 4)#0, 0, 360, (0, 255, 0), 4)
+    if len(centers) > 0:
+        centers = numpy.array(centers)
+    else:
+        centers = None
+    return centers
 
 
-    # # Define the brightness value you want to add
-    # brightness_value = 50
-    #
-    # # Add the brightness value
-    # brightened_image = cv2.add(hist_gray, numpy.array([brightness_value]))
-
-    return image
+# def facial_detection_preprocessing(image):
+#     # image = cv2.equalizeHist(image)
+#     # Create a CLAHE object (with optional parameters)
+#     # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+#     #
+#     # # Apply CLAHE
+#     # hist_gray = clahe.apply(image)
+#     # hist_gray = custom_equalize(image)
+#
+#
+#     # # Define the brightness value you want to add
+#     # brightness_value = 50
+#     #
+#     # # Add the brightness value
+#     # brightened_image = cv2.add(hist_gray, numpy.array([brightness_value]))
+#
+#     return image
 
 
 # def custom_equalize(image):
@@ -128,7 +141,7 @@ def facial_detection_preprocessing(image):
 #     return image
 
 
-def rotate(image, degrees, original_dimensions=None, faces=None):
+def rotate(image, degrees, original_dimensions=None, detected_objects=None):
     # Image dimensions
     (h, w) = image.shape[:2]
 
@@ -153,14 +166,14 @@ def rotate(image, degrees, original_dimensions=None, faces=None):
     # Perform the rotation
     rotated_image = cv2.warpAffine(image, rotation_matrix, (new_w, new_h))
 
-    if faces is not None:
-        center_points = faces[:, :2]  # Selects all rows and the first two columns (x and y)
+    if detected_objects is not None:
+        center_points = detected_objects[:, :2]  # Selects all rows and the first two columns (x and y)
 
         transformed_points = cv2.transform(numpy.array([center_points]), rotation_matrix)
         reshaped_points = transformed_points.reshape(-1, 2)
         for (index, transformed_point) in enumerate(reshaped_points):
-            faces[index, 0] = transformed_point[0]  # Update x-coordinate of the center point
-            faces[index, 1] = transformed_point[1]  # Update y-coordinate of the center point
+            detected_objects[index, 0] = transformed_point[0]  # Update x-coordinate of the center point
+            detected_objects[index, 1] = transformed_point[1]  # Update y-coordinate of the center point
 
             # cv2.circle(rotated_image, center=face_centers[index, :2], radius=5, thickness=2, color=(0,0,255))
 
@@ -171,73 +184,113 @@ def rotate(image, degrees, original_dimensions=None, faces=None):
         # Crop the image
         rotated_image = rotated_image[y:y+original_h, x:x+original_w]
 
-        if faces is not None:
+        if detected_objects is not None:
             # Adjust the centers
-            for index, row in enumerate(faces):
-                faces[index, 1] -= y
-                faces[index, 0] -= x
+            for index, row in enumerate(detected_objects):
+                detected_objects[index, 1] -= y
+                detected_objects[index, 0] -= x
 
-    return rotated_image, faces
+    return rotated_image, detected_objects
 
 
-def detect_faces(image, args):
-
-    # preprocess
+def preprocess_for_face_detection(image):
     if len(image.shape) == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     image = cv2.resize(image, dsize=None, fx=2, fy=2)
     image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=20, sigmaY=20)
+    return image
 
-    all_faces =[]
+
+def preprocess_for_eye_detection(image):
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    image = cv2.resize(image, dsize=None, fx=2, fy=2)
+    image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=20, sigmaY=20)
+    return image
+
+
+def detect(detector, image, args):
+    all_objects =[]
 
     for angle in [i * 15 + -45 for i in range(6)]:
-        # cv2.imshow('image pre', image)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-        image, faces = detect_faces_at(angle, image, args)
+        image, detected_objects = detect_at(detector, angle, image, args)
 
-        if faces is not None:
-            for index in range(faces.shape[0]):
-                faces[index, 0] /= 2  # Update x-coordinate of the center point
-                faces[index, 1] /= 2  # Update y-coordinate of the center point
+        if detected_objects is not None:
+            for index in range(detected_objects.shape[0]):
+                detected_objects[index, 0] /= 2  # Update x-coordinate of the center point
+                detected_objects[index, 1] /= 2  # Update y-coordinate of the center point
 
-            all_faces += faces.tolist()
+            all_objects += detected_objects.tolist()
 
-    return cluster_faces(all_faces, args)
+    return cluster_objects(all_objects, args)
 
 
-def cluster_faces(faces, args):
-    faces = numpy.array(faces)
+def cluster_objects(objects, args):
+    objects = numpy.array(objects)
 
     # eps determines cluster affinity, min_samples required for a cluster
-    dbscan = DBSCAN(eps=50, min_samples=args.face_cluster_min)
-    clusters = dbscan.fit_predict(faces)
+    dbscan = DBSCAN(eps=args.cluster_eps_eyes, min_samples=args.cluster_min_eyes)
+    clusters = dbscan.fit_predict(objects)
 
     # Averaging points in each cluster
     averages = []
     for cluster in set(clusters):
-        avg = faces[clusters == cluster].mean(axis=0).round().astype(int)
+        avg = objects[clusters == cluster].mean(axis=0).round().astype(int)
         averages.append(avg)
 
     return averages
 
-def detect_faces_at(angle, image, args):
+
+def detect_at(detector, angle, image, args):
     original_height = image.shape[0]
     original_width = image.shape[1]
+
     image, _ = rotate(image, angle)
+    objects = detector(image, args)
+    rotated, objects = rotate(image, -1 * angle, (original_width, original_height), objects)
 
-    faces = find_faces(image, args)
+    return rotated, objects
 
-    # for center in centers:
-    #     print(f"Center ({center[0]}, {center[1]})")
 
-    rotated, faces = rotate(image, -1 * angle, (original_width, original_height), faces)
+def extract_face_regions(original):
 
-    # cv2.imshow('image with features detected', output)
-    # cv2.imshow('rotated', rotated)
+    image_processed = preprocess_for_face_detection(original)
+    faces = detect(find_faces, image_processed, args)
+
+    face_data = []
+    if faces is not None:
+        for row in faces:
+            center_x, center_y, width, height = row.tolist()
+            origin_x = center_x - width // 2
+            origin_y = center_y - height // 2
+
+            # Extract the region of interest
+            face_image = original[origin_y:origin_y + height, origin_x:origin_x + width]
+            origin = (origin_x, origin_y)
+            data = (face_image, origin, width, height)
+            face_data.append(data)
+
+    return face_data
+    #         # cv2.imshow(f'face_image {face_image.shape}', face_image)
+    #         # cv2.imwrite("closeup.png", face_image)
+    #
+    #         image_processed = preprocess_for_eye_detection(face_image)
+    #         eyes = detect(find_eyes, image_processed, args)
+    #         print(eyes)
+    #
+    #         cv2.imshow(f'eyes {image_processed.shape}', image_processed)
+    #         cv2.waitKey(0)
+    #         cv2.destroyAllWindows()
+    #
+    #         cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 0, 255))
+    #         cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), color=(0, 0, 255))
+    #
+    # # Process the clustering results...
+    #
+    # cv2.imshow(f'original {original.shape}', original)
+    # # cv2.imshow(f'image {image.shape}', image)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
-    return rotated, faces
 
 
 if __name__ == '__main__':
@@ -257,39 +310,50 @@ if __name__ == '__main__':
     # ap.add_argument('--face_cascade',  default='classifiers/haarcascades/haarcascade_frontalface_default.xml')
 
     ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/haarcascade_eye_tree_eyeglasses.xml')
+    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/haarcascade_eye.xml')
+    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/lefteye_2splits.xml')
+    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/righteye_2splits.xml')
     # ap.add_argument('--camera', type=int, default=0)
     # args = parser.parse_args()
 
-    ap.add_argument('--face_cluster_min', type=int, default=1, help="number of detections required for a given face to be counted")
+    ap.add_argument('--cluster_min_face', type=int, default=1,  help="number of neighbors necessary to be considered a detected face group")
+    ap.add_argument('--cluster_eps_face', type=int, default=50, help="eps to be considered a detected face group")
+
+    ap.add_argument('--cluster_min_eyes', type=int, default=1, help="number of neighbors necessary to be considered a detected eye group")
+    ap.add_argument('--cluster_eps_eyes', type=int, default=5, help="eps to be considered a detected eye group")
     args = ap.parse_args()
 
-    image_name = "dogpark.jpeg"#"dogs.jpeg"#"classroom.jpeg"#
+    image_name = "closeup.png"
     original = cv2.imread(image_name)
 
-    faces = detect_faces(original, args)
+    image_processed = preprocess_for_eye_detection(original)
+    eyes = detect(find_eyes, image_processed, args)
+    print(eyes)
 
-    print(faces)
-    if faces is not None:
-        for row in faces:
-            center_x, center_y, width, height = row.tolist()
-            origin_x = center_x - width // 2
-            origin_y = center_y - height // 2
-            cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 0, 255))
-            cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), color=(0, 0, 255))
+    # if eyes is not None:
+    #     for row in eyes:
+    #         center_x, center_y, width, height = row.tolist()
+    #         cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 255, 0))
+    #
+    # cv2.imshow(f'eyes {original.shape}', original)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
-            # Extract the region of interest
-            roi = original[origin_y:origin_y + height, origin_x:origin_x + width]
 
-            # cv2.imshow(f'roi {roi.shape}', roi)
 
-    # Process the clustering results...
+
+    image_name = "dogpark.jpeg"  # "dogs.jpeg"#"classroom.jpeg"#
+    original = cv2.imread(image_name)
+    face_data = extract_face_regions(original)
+
+    for data in face_data:
+        face_image, (origin_x, origin_y), width, height = data
+        # cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 0, 255))
+        cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), color=(0, 0, 255))
 
     cv2.imshow(f'original {original.shape}', original)
-    # cv2.imshow(f'image {image.shape}', image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-
     # apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
     # print("[INFO] applying CLAHE...")
     # clahe = cv2.createCLAHE(clipLimit=args.clip,  tileGridSize=(args.tile, args.tile))
