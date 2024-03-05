@@ -17,7 +17,6 @@ def find_faces(image, args):
     for (x,y,w,h) in faces:
         center = [x + w // 2, y + h // 2, w, h]
         centers.append(center)
-        # image = cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 4)#0, 0, 360, (0, 255, 0), 4)
     if len(centers) > 0:
         centers = numpy.array(centers)
     else:
@@ -34,111 +33,26 @@ def find_eyes(image, args):
     # -- Detect eyes
     eyes = eyes_cascade.detectMultiScale(image, scaleFactor=1.05, minNeighbors=10, minSize=[30, 30])
 
+    image_width = image.shape[1]
+    image_center = image_width // 2, image.shape[0] // 2
+
     centers = []
+    distances = []
     for (x, y, w, h) in eyes:
         center = [x + w // 2, y + h // 2, w, h]
-        centers.append(center)
-        # image = cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 4)#0, 0, 360, (0, 255, 0), 4)
+
+        # remove points that are close and far from center
+        distance_to_center = distance_between(image_center, center)
+        percent_of_width = distance_to_center / image_width
+        distances.append(percent_of_width)
+        if 0.1 < percent_of_width < 0.25:
+            centers.append(center)
+
     if len(centers) > 0:
         centers = numpy.array(centers)
     else:
         centers = None
     return centers
-
-
-# def facial_detection_preprocessing(image):
-#     # image = cv2.equalizeHist(image)
-#     # Create a CLAHE object (with optional parameters)
-#     # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-#     #
-#     # # Apply CLAHE
-#     # hist_gray = clahe.apply(image)
-#     # hist_gray = custom_equalize(image)
-#
-#
-#     # # Define the brightness value you want to add
-#     # brightness_value = 50
-#     #
-#     # # Add the brightness value
-#     # brightened_image = cv2.add(hist_gray, numpy.array([brightness_value]))
-#
-#     return image
-
-
-# def custom_equalize(image):
-#     # Calculate histogram and CDF
-#     hist, bins = numpy.histogram(image.flatten(), 256, [0, 256])
-#     cdf = hist.cumsum()
-#     cdf_normalized = cdf * float(hist.max()) / cdf.max()
-#
-#     # Apply a more aggressive transformation to the darker side of the spectrum
-#     # For instance, use a cubic root transformation
-#     cdf_half = numpy.cbrt(cdf_normalized[:128])
-#
-#     # Scale the transformed CDF more aggressively
-#     # The scaling factor can be adjusted to control the stretch
-#     scale_factor = cdf_normalized[127] / cdf_half[-1]
-#     cdf_modified = numpy.copy(cdf_normalized)
-#     cdf_modified[:128] = cdf_half * scale_factor * 1.5  # Adjust the 1.5 as needed
-#
-#     # Use the modified CDF to map the original pixel values to the new ones
-#     cdf_m = numpy.ma.masked_equal(cdf_modified, 0)
-#     cdf_m = (cdf_m - cdf_m.min()) * 255 / (cdf_m.max() - cdf_m.min())
-#     cdf_final = numpy.ma.filled(cdf_m, 0).astype('uint8')
-#     image_equalized = cdf_final[image]
-#
-#     return image_equalized
-# def invert(image):
-#     # Ensure all values are non-negative
-#     image = numpy.clip(image, 1, None)
-#
-#     # Log Transformation
-#     c = 45
-#     log_of_image = numpy.log(image)
-#     log_transformed = c * (log_of_image)
-#
-#     # Convert to 8-bit unsigned integer format
-#     log_transformed = numpy.uint8(log_transformed)
-#     cv2.imshow("log_transformed", log_transformed)
-#
-#
-#     # Inverse-Log Transformation
-#     inverse_log_transformed = c * (numpy.exp(log_transformed / c) - 1)
-#
-#     # Convert to 8-bit unsigned integer format again
-#     inverse_log_transformed = numpy.uint8(inverse_log_transformed)
-#     cv2.imshow("inverse_log_transformed", inverse_log_transformed)
-#
-#     return inverse_log_transformed
-
-
-# def detectAndDisplay(image, face_cascade, eyes_cascade):
-#     frame_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-#     frame_gray = cv2.equalizeHist(frame_gray)
-#
-#     #-- Detect faces
-#     faces = face_cascade.detectMultiScale(frame_gray)
-#
-#     for (x,y,w,h) in faces:
-#         center = (x + w//2, y + h//2)
-#         image = cv2.ellipse(image, center, (w // 2, int(h * 0.75)), 0, 0, 360, (0, 255, 0), 4)
-#         face_region_of_interest = frame_gray[y:y+h,x:x+w]
-#
-#         #-- In each face, detect eyes
-#         eyes = eyes_cascade.detectMultiScale(face_region_of_interest)
-#
-#         top_left = None
-#         bottom_right = None
-#         for (x2,y2,w2,h2) in eyes:
-#             x_absolute = x + x2
-#             y_absolute = y + y2
-#             if top_left is None or top_left[0] > x_absolute:
-#                 top_left = (x_absolute, y_absolute)
-#             if bottom_right is None or bottom_right[0] < x_absolute:
-#                 bottom_right = (x_absolute + w2, y_absolute + h2)
-#         image = cv2.rectangle(image, top_left, bottom_right, (0, 0, 255), 4)
-#
-#     return image
 
 
 def rotate(image, degrees, original_dimensions=None, detected_objects=None):
@@ -193,44 +107,51 @@ def rotate(image, degrees, original_dimensions=None, detected_objects=None):
     return rotated_image, detected_objects
 
 
-def preprocess_for_face_detection(image):
+# def preprocess_for_face_detection(image, resize_factor):
+#     if len(image.shape) == 3:
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+#     image = cv2.resize(image, dsize=None, fx=resize_factor, fy=resize_factor)
+#     image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=5, sigmaY=5)
+#     return image
+
+
+def preprocess(image, resize_factor):
     if len(image.shape) == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    image = cv2.resize(image, dsize=None, fx=2, fy=2)
-    image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=20, sigmaY=20)
+    image = cv2.resize(image, dsize=None, fx=resize_factor, fy=resize_factor)
+    image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=5, sigmaY=5)
     return image
 
 
-def preprocess_for_eye_detection(image):
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    image = cv2.resize(image, dsize=None, fx=2, fy=2)
-    image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=20, sigmaY=20)
-    return image
-
-
-def detect(detector, image, args):
+def detect(detector, image, args, resize_factor):
     all_objects =[]
 
+    # run the image through the detector at 15 degree intervals from -45 to 45
     for angle in [i * 15 + -45 for i in range(6)]:
         image, detected_objects = detect_at(detector, angle, image, args)
 
         if detected_objects is not None:
             for index in range(detected_objects.shape[0]):
-                detected_objects[index, 0] /= 2  # Update x-coordinate of the center point
-                detected_objects[index, 1] /= 2  # Update y-coordinate of the center point
+                detected_objects[index, 0] /= resize_factor # Update x-coordinate of the center point
+                detected_objects[index, 1] /= resize_factor # Update y-coordinate of the center point
 
             all_objects += detected_objects.tolist()
 
-    return cluster_objects(all_objects, args)
+    return cluster_objects(detector, all_objects, args)
 
 
-def cluster_objects(objects, args):
+def cluster_objects(detector, objects, args):
     objects = numpy.array(objects)
 
-    # eps determines cluster affinity, min_samples required for a cluster
-    dbscan = DBSCAN(eps=args.cluster_eps_eyes, min_samples=args.cluster_min_eyes)
-    clusters = dbscan.fit_predict(objects)
+    if detector.__name__ == "find_faces":
+        # eps determines cluster affinity, min_samples required for a cluster
+        dbscan = DBSCAN(eps=args.cluster_eps_faces, min_samples=args.cluster_min_faces)
+    elif detector.__name__ == "find_eyes":
+        dbscan = DBSCAN(eps=args.cluster_eps_eyes, min_samples=args.cluster_min_eyes)
+    else:
+        raise ValueError("Unsupported detector type")
+
+    clusters = dbscan.fit_predict(objects) if len(objects) > 0 else objects
 
     # Averaging points in each cluster
     averages = []
@@ -252,10 +173,65 @@ def detect_at(detector, angle, image, args):
     return rotated, objects
 
 
-def extract_face_regions(original):
+def blur_eye_regions(image, args, resize_factor):
+    image_processed = preprocess(image, resize_factor)
+    eyes = detect(find_eyes, image_processed, args, resize_factor)
+    print(eyes)
 
-    image_processed = preprocess_for_face_detection(original)
-    faces = detect(find_faces, image_processed, args)
+    # image_width = image.shape[1]
+    # image_center = image.shape[1] // 2, image.shape[0] // 2
+    #
+    # distances = []
+    if eyes is not None:
+        # for i in range(len(eyes)):
+        #     row = eyes[i]
+        #     x1, y1, _, _ = row.tolist()
+        #     for j, other in enumerate(eyes):
+        #         x2, y2, _, _ = other.tolist()
+        #         distance = distance_between((x1, y1), (x2, y2))
+        #         ratio = distance / image_width
+        #         distances.append(ratio)
+
+        # print(f"distances: {distances}")
+        # distances.sort()
+        # print(f"distances: {distances}")
+
+        for row in eyes:
+        #     center_x, center_y, width, height = row.tolist()
+        #     distance_from_center = distance_between(image_center, (center_x, center_y))
+        #     distances.append(distance_from_center)
+        #
+        # eyes_with_pairs = []
+        # diffs = []
+        # for i in range(len(distances)):
+        #     distance_from_center = distances[i]
+        #     for j, other in enumerate(distances):
+        #         if j == i:
+        #             continue
+        #         diff = abs(distance_from_center - other)
+        #         diffs.append(diff)
+        #         if 0.5 < diff < 5:
+        #             eyes_with_pairs.append(eyes[i])
+        # print(f"diffs: {diffs}")
+
+        # diffs.sort()
+        # print(f"diffs-: {diffs}")
+        # for row in eyes_with_pairs:
+            center_x, center_y, width, height = row.tolist()
+            # image = circular_blur(image, center=(center_x, center_y), radius=15)
+            cv2.circle(image, center=(center_x, center_y), radius=5, thickness=2, color=(0, 255, 0))
+
+    return image
+
+
+def distance_between(point_1, point_2):
+    return ((point_2[0] - point_1[0]) ** 2 + (point_2[1] - point_1[1]) ** 2) ** 0.5
+
+def extract_face_regions(image):
+
+    resize_factor = 2
+    image_processed = preprocess(image, resize_factor)
+    faces = detect(find_faces, image_processed, args, resize_factor)
 
     face_data = []
     if faces is not None:
@@ -265,32 +241,25 @@ def extract_face_regions(original):
             origin_y = center_y - height // 2
 
             # Extract the region of interest
-            face_image = original[origin_y:origin_y + height, origin_x:origin_x + width]
+            face_image = image[origin_y:origin_y + height, origin_x:origin_x + width]
             origin = (origin_x, origin_y)
             data = (face_image, origin, width, height)
             face_data.append(data)
 
     return face_data
-    #         # cv2.imshow(f'face_image {face_image.shape}', face_image)
-    #         # cv2.imwrite("closeup.png", face_image)
-    #
-    #         image_processed = preprocess_for_eye_detection(face_image)
-    #         eyes = detect(find_eyes, image_processed, args)
-    #         print(eyes)
-    #
-    #         cv2.imshow(f'eyes {image_processed.shape}', image_processed)
-    #         cv2.waitKey(0)
-    #         cv2.destroyAllWindows()
-    #
-    #         cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 0, 255))
-    #         cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), color=(0, 0, 255))
-    #
-    # # Process the clustering results...
-    #
-    # cv2.imshow(f'original {original.shape}', original)
-    # # cv2.imshow(f'image {image.shape}', image)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+
+def circular_blur(image, center, radius):
+    # thanks to https://stackoverflow.com/a/60911696
+
+    # create white circle mask
+    mask_img = numpy.zeros(image.shape, dtype='uint8')
+    cv2.circle(mask_img, center, radius, (255, 255, 255), -1)
+
+    # make a blurred copy of the entire image
+    img_all_blurred = cv2.GaussianBlur(image, (7,7), sigmaX=5)
+
+    # copy blurred version to the original image where your mask is > 0.
+    return numpy.where(mask_img > 0, img_all_blurred, image)
 
 
 if __name__ == '__main__':
@@ -316,88 +285,30 @@ if __name__ == '__main__':
     # ap.add_argument('--camera', type=int, default=0)
     # args = parser.parse_args()
 
-    ap.add_argument('--cluster_min_face', type=int, default=1,  help="number of neighbors necessary to be considered a detected face group")
-    ap.add_argument('--cluster_eps_face', type=int, default=50, help="eps to be considered a detected face group")
+    ap.add_argument('--cluster_min_faces', type=int, default=1,  help="number of neighbors necessary to be considered a detected face group")
+    ap.add_argument('--cluster_eps_faces', type=int, default=50, help="eps to be considered a detected face group")
 
     ap.add_argument('--cluster_min_eyes', type=int, default=1, help="number of neighbors necessary to be considered a detected eye group")
-    ap.add_argument('--cluster_eps_eyes', type=int, default=5, help="eps to be considered a detected eye group")
+    ap.add_argument('--cluster_eps_eyes', type=int, default=15, help="eps to be considered a detected eye group")
     args = ap.parse_args()
 
-    image_name = "closeup.png"
+
+    image_name = "dogs.jpeg"#"dogpark.jpeg"#"classroom.jpeg"#
     original = cv2.imread(image_name)
 
-    image_processed = preprocess_for_eye_detection(original)
-    eyes = detect(find_eyes, image_processed, args)
-    print(eyes)
-
-    # if eyes is not None:
-    #     for row in eyes:
-    #         center_x, center_y, width, height = row.tolist()
-    #         cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 255, 0))
-    #
-    # cv2.imshow(f'eyes {original.shape}', original)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
-
-
-
-    image_name = "dogpark.jpeg"  # "dogs.jpeg"#"classroom.jpeg"#
-    original = cv2.imread(image_name)
     face_data = extract_face_regions(original)
 
     for data in face_data:
         face_image, (origin_x, origin_y), width, height = data
-        # cv2.circle(original, center=(center_x, center_y), radius=5, thickness=2, color=(0, 0, 255))
-        cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), color=(0, 0, 255))
+        cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), thickness=4, color=(0, 0, 255))
 
-    cv2.imshow(f'original {original.shape}', original)
+        resize_factor = 1500 // original.shape[0]
+        eyes_blurred_image = blur_eye_regions(face_image, args, resize_factor)
+
+        end_x = origin_x + width
+        end_y = origin_y + height
+        original[origin_y:end_y, origin_x:end_x] = eyes_blurred_image
+
+    cv2.imshow(f'{image_name} {original.shape}', original)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    # apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    # print("[INFO] applying CLAHE...")
-    # clahe = cv2.createCLAHE(clipLimit=args.clip,  tileGridSize=(args.tile, args.tile))
-    # equalized = clahe.apply(image)
-    # cv2.imshow('equalized', equalized)
-
-    # # Constants for finding range of skin color in YCrCb
-    # min_YCrCb = numpy.array([0, 133, 77], numpy.uint8)
-    # max_YCrCb = numpy.array([255, 173, 127], numpy.uint8)
-    #
-    # # Convert image to YCrCb
-    # imageYCrCb = cv2.cvtColor(image,cv2.COLOR_BGR2YCR_CB)
-    #
-    # # Find region with skin tone in YCrCb image
-    # skinRegion = cv2.inRange(imageYCrCb,min_YCrCb,max_YCrCb)
-    #
-    # # Do contour detection on skin region
-    # contours, hierarchy = cv2.findContours(skinRegion, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #
-    # sourceImage = image.copy()
-    #
-    # # Draw the contour on the source image
-    # for i, c in enumerate(contours):
-    #     area = cv2.contourArea(c)
-    #     if area > 1000:
-    #         cv2.drawContours(sourceImage, contours, i, (0, 255, 0), 3)
-    #
-    # cv2.imshow('sourceImage', sourceImage)
-
-
-    # output = cv2.cvtColor(dogpark, cv2.COLOR_BGR2GRAY)
-    # gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # three_channel_image = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2BGR)
-
-    # cv2.imshow("gray", gray_image)
-    # three_channel_image = invert(image)
-
-
-    # canny = cv2.Canny(image, threshold1=100, threshold2=200)
-    # cv2.imshow('canny', canny)
-
-    # Define the brightness value you want to add
-    # brightness_value = 150
-
-    # Add the brightness value
-    # brightened_image = cv2.add(gray_image, numpy.array([brightness_value]))
-    # cv2.imshow("brightened_image", brightened_image)
