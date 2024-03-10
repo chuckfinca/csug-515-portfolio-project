@@ -1,7 +1,9 @@
 import cv2
 import argparse
-from sklearn.cluster import DBSCAN
 import numpy
+from sklearn.cluster import DBSCAN
+from matplotlib import gridspec
+import matplotlib.pyplot as pyplot
 
 
 def find_faces(image, args):
@@ -89,8 +91,6 @@ def rotate(image, degrees, original_dimensions=None, detected_objects=None):
             detected_objects[index, 0] = transformed_point[0]  # Update x-coordinate of the center point
             detected_objects[index, 1] = transformed_point[1]  # Update y-coordinate of the center point
 
-            # cv2.circle(rotated_image, center=face_centers[index, :2], radius=5, thickness=2, color=(0,0,255))
-
     if original_dimensions is not None and (original_w := original_dimensions[0]) and (original_h := original_dimensions[1]):
         x = (new_w - original_w) // 2
         y = (new_h - original_h) // 2
@@ -105,14 +105,6 @@ def rotate(image, degrees, original_dimensions=None, detected_objects=None):
                 detected_objects[index, 0] -= x
 
     return rotated_image, detected_objects
-
-
-# def preprocess_for_face_detection(image, resize_factor):
-#     if len(image.shape) == 3:
-#         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-#     image = cv2.resize(image, dsize=None, fx=resize_factor, fy=resize_factor)
-#     image = cv2.GaussianBlur(image,ksize=(3,3), sigmaX=5, sigmaY=5)
-#     return image
 
 
 def preprocess(image, resize_factor):
@@ -176,50 +168,12 @@ def detect_at(detector, angle, image, args):
 def blur_eye_regions(image, args, resize_factor):
     image_processed = preprocess(image, resize_factor)
     eyes = detect(find_eyes, image_processed, args, resize_factor)
-    print(eyes)
 
-    # image_width = image.shape[1]
-    # image_center = image.shape[1] // 2, image.shape[0] // 2
-    #
-    # distances = []
     if eyes is not None:
-        # for i in range(len(eyes)):
-        #     row = eyes[i]
-        #     x1, y1, _, _ = row.tolist()
-        #     for j, other in enumerate(eyes):
-        #         x2, y2, _, _ = other.tolist()
-        #         distance = distance_between((x1, y1), (x2, y2))
-        #         ratio = distance / image_width
-        #         distances.append(ratio)
-
-        # print(f"distances: {distances}")
-        # distances.sort()
-        # print(f"distances: {distances}")
-
         for row in eyes:
-        #     center_x, center_y, width, height = row.tolist()
-        #     distance_from_center = distance_between(image_center, (center_x, center_y))
-        #     distances.append(distance_from_center)
-        #
-        # eyes_with_pairs = []
-        # diffs = []
-        # for i in range(len(distances)):
-        #     distance_from_center = distances[i]
-        #     for j, other in enumerate(distances):
-        #         if j == i:
-        #             continue
-        #         diff = abs(distance_from_center - other)
-        #         diffs.append(diff)
-        #         if 0.5 < diff < 5:
-        #             eyes_with_pairs.append(eyes[i])
-        # print(f"diffs: {diffs}")
-
-        # diffs.sort()
-        # print(f"diffs-: {diffs}")
-        # for row in eyes_with_pairs:
             center_x, center_y, width, height = row.tolist()
-            # image = circular_blur(image, center=(center_x, center_y), radius=15)
-            cv2.circle(image, center=(center_x, center_y), radius=5, thickness=2, color=(0, 255, 0))
+            image = circular_blur(image, center=(center_x, center_y))
+            # cv2.circle(image, center=(center_x, center_y), radius=5, thickness=2, color=(0, 255, 0))
 
     return image
 
@@ -227,8 +181,9 @@ def blur_eye_regions(image, args, resize_factor):
 def distance_between(point_1, point_2):
     return ((point_2[0] - point_1[0]) ** 2 + (point_2[1] - point_1[1]) ** 2) ** 0.5
 
-def extract_face_regions(image):
 
+def extract_face_regions(image):
+    print(f" Extracting faces")
     resize_factor = 2
     image_processed = preprocess(image, resize_factor)
     faces = detect(find_faces, image_processed, args, resize_factor)
@@ -246,44 +201,117 @@ def extract_face_regions(image):
             data = (face_image, origin, width, height)
             face_data.append(data)
 
+    print(f" {len(face_data)} faces found")
     return face_data
 
-def circular_blur(image, center, radius):
+
+def circular_blur(image, center):
     # thanks to https://stackoverflow.com/a/60911696
 
     # create white circle mask
     mask_img = numpy.zeros(image.shape, dtype='uint8')
+    radius = image.shape[1] // 8
     cv2.circle(mask_img, center, radius, (255, 255, 255), -1)
 
+    kernel = kernel_size(image, 10)
+
     # make a blurred copy of the entire image
-    img_all_blurred = cv2.GaussianBlur(image, (7,7), sigmaX=5)
+    img_all_blurred = cv2.GaussianBlur(image, (kernel, kernel), sigmaX=5)
 
     # copy blurred version to the original image where your mask is > 0.
     return numpy.where(mask_img > 0, img_all_blurred, image)
+
+
+def kernel_size(image, percentage):
+    # Calculate the kernel size as a percentage of the smaller dimension of the image
+    kernel_size = int(min(image.shape[:2]) * percentage / 100)
+
+    # Ensure the kernel size is odd and has a minimum value of 1
+    kernel_size = max(1, kernel_size)
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    return kernel_size
+
+
+def display(face_images, original_image, image_name):
+    # Create a figure
+    figure = pyplot.figure(figsize=(12, 8))
+    figure.suptitle(image_name, fontsize=16)
+    number_of_columns = len(face_images)
+
+    # Define the grid layout
+    grid_spec = gridspec.GridSpec(2, number_of_columns, height_ratios=[1, 2])  # 1:2 ratio between the first and second rows
+
+    # Plot small images in the first row
+    for i, image in enumerate(face_images):
+        # convert to RGB
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        axes_1 = figure.add_subplot(grid_spec[0, i])#pyplot.subplot(2, number_of_columns, i)
+        axes_1.imshow(image_rgb, cmap='gray')
+        axes_1.axis('off')
+
+    # Plot the large image in the second row
+    axes_2 = figure.add_subplot(grid_spec[1, :])
+    original_image_rgb = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+    axes_2.imshow(original_image_rgb, cmap='gray')
+    axes_2.axis('off')
+
+    pyplot.subplots_adjust(wspace=0.05, hspace=0.05)
+    pyplot.tight_layout(pad=1.0)
+    pyplot.show()
+
+
+def blur_eyes(face_data, original):
+    face_images = []
+
+    print(f" Blurring eyes")
+    for data in face_data:
+        face_image, _, width, height = data
+
+        resize_factor = 1500 // original.shape[0]
+        eyes_blurred_image = blur_eye_regions(face_image, args, resize_factor)
+        face_images.append(eyes_blurred_image.copy())
+
+    return face_images
+
+
+def set_processed_faces_in_image(face_data, blurred_images, original):
+    print(f" Setting processed faces in original")
+    for index, data in enumerate(face_data):
+        face_image, (origin_x, origin_y), width, height = data
+        end_x = origin_x + width
+        end_y = origin_y + height
+        original[origin_y:end_y, origin_x:end_x] = blurred_images[index]
+
+
+def draw_face_rectangles(face_data, original):
+    print(f" Drawing refaces in original")
+    for data in face_data:
+        face_image, (origin_x, origin_y), width, height = data
+        cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), thickness=4, color=(0, 0, 255))
+
+
+def process(image_name):
+    print(f"Processing {image_name}...")
+    original = cv2.imread(image_name)
+
+    face_data = extract_face_regions(original)
+
+    blurred_images = blur_eyes(face_data, original)
+    set_processed_faces_in_image(face_data, blurred_images, original)
+    draw_face_rectangles(face_data, original)
+
+    display(blurred_images, original, image_name)
 
 
 if __name__ == '__main__':
 
     # construct the argument parser and parse the arguments
     ap = argparse.ArgumentParser()
-    # ap.add_argument("-i", "--image", type=str, default=None, help="path to the input image")
-    # ap.add_argument("-c", "--clip", type=float, default=2.0, help="threshold for contrast limiting")
-    # ap.add_argument("-t", "--tile", type=int, default=8, help="tile grid size -- divides image into tile x time cells")
-
-    # ap.add_argument('--face_cascade',  default='classifiers/haarcascades/haarcascade_frontalface_alt2.xml')
-    # ap.add_argument('--face_cascade', default='classifiers/haarcascades/haarcascade_frontalface_alt.xml')
     ap.add_argument('--face_cascade', default='classifiers/lbpcascades/lbpcascade_frontalface_improved.xml')
-
-    # ap.add_argument('--face_cascade', default='classifiers/lbpcascades/lbpcascade_frontalface.xml')
-    # ap.add_argument('--face_cascade',  default='classifiers/haarcascades/haarcascade_frontalface_alt_tree.xml')
-    # ap.add_argument('--face_cascade',  default='classifiers/haarcascades/haarcascade_frontalface_default.xml')
-
     ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/haarcascade_eye_tree_eyeglasses.xml')
-    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/haarcascade_eye.xml')
-    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/lefteye_2splits.xml')
-    # ap.add_argument('--eyes_cascade', default='classifiers/haarcascades/righteye_2splits.xml')
-    # ap.add_argument('--camera', type=int, default=0)
-    # args = parser.parse_args()
 
     ap.add_argument('--cluster_min_faces', type=int, default=1,  help="number of neighbors necessary to be considered a detected face group")
     ap.add_argument('--cluster_eps_faces', type=int, default=50, help="eps to be considered a detected face group")
@@ -292,23 +320,5 @@ if __name__ == '__main__':
     ap.add_argument('--cluster_eps_eyes', type=int, default=15, help="eps to be considered a detected eye group")
     args = ap.parse_args()
 
-
-    image_name = "dogs.jpeg"#"dogpark.jpeg"#"classroom.jpeg"#
-    original = cv2.imread(image_name)
-
-    face_data = extract_face_regions(original)
-
-    for data in face_data:
-        face_image, (origin_x, origin_y), width, height = data
-        cv2.rectangle(original, (origin_x, origin_y), (origin_x + width, origin_y + height), thickness=4, color=(0, 0, 255))
-
-        resize_factor = 1500 // original.shape[0]
-        eyes_blurred_image = blur_eye_regions(face_image, args, resize_factor)
-
-        end_x = origin_x + width
-        end_y = origin_y + height
-        original[origin_y:end_y, origin_x:end_x] = eyes_blurred_image
-
-    cv2.imshow(f'{image_name} {original.shape}', original)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    for image_name in ["classroom.jpeg", "dogpark.jpeg", "dogs.jpeg"]:
+        process(image_name)
