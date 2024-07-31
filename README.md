@@ -32,14 +32,14 @@ Ensure you have [Mamba](https://mamba.readthedocs.io/en/latest/installation.html
    
 Execute the following commands:
 
-===shell
+```sh
 mamba create -n [ENVIRONMENT_NAME] python=3.9.19 -y
 mamba activate [ENVIRONMENT_NAME]
 ===
 
 ### Install Necessary Packages
 
-===shell
+```sh
 # Install each with mamba and fall back to pip if necessary
 python -m pkg_vers install_packages cv2 matplotlib==3.8.4 numpy==1.26.4 sklearn==1.4.2
 ===
